@@ -1,0 +1,40 @@
+# ── Stage 1: deps ────────────────────────────────────────────────────────────
+FROM node:20-alpine AS deps
+
+# FFmpeg is needed at runtime for video assembly / export
+RUN apk add --no-cache ffmpeg
+
+WORKDIR /app
+
+# Copy only manifests first so layer is cached until deps change
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/server/package.json ./apps/server/
+COPY packages/shared/package.json ./packages/shared/
+
+RUN corepack enable && pnpm install --frozen-lockfile
+
+# ── Stage 2: build ───────────────────────────────────────────────────────────
+FROM deps AS builder
+
+COPY . .
+
+RUN pnpm --filter @screencraft/shared build && \
+    pnpm --filter @screencraft/server build
+
+# ── Stage 3: runner ──────────────────────────────────────────────────────────
+FROM node:20-alpine AS runner
+
+RUN apk add --no-cache ffmpeg
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+# Copy compiled output + runtime node_modules
+COPY --from=builder /app/apps/server/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+
+EXPOSE 4000
+
+CMD ["node", "dist/index.js"]

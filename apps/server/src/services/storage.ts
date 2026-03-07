@@ -6,9 +6,12 @@ export class StorageService {
 
   constructor() {
     this.storage = new Storage({
-      projectId: process.env.GCS_PROJECT_ID,
-      // If GCS_KEY_FILE is set, use it; otherwise falls back to
-      // Application Default Credentials (ADC) — ideal for Cloud Run / GCE
+      projectId: process.env.GCS_PROJECT_ID ?? "local",
+      // Local dev: point at fake-gcs-server (docker-compose)
+      ...(process.env.GCS_EMULATOR_HOST
+        ? { apiEndpoint: process.env.GCS_EMULATOR_HOST }
+        : {}),
+      // Production: use key file if set, otherwise ADC (Cloud Run / GCE)
       ...(process.env.GCS_KEY_FILE ? { keyFilename: process.env.GCS_KEY_FILE } : {}),
     });
     this.bucket = process.env.GCS_BUCKET!;

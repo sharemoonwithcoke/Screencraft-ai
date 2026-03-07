@@ -1,13 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Required for Dockerfile.web standalone output
+  output: "standalone",
   transpilePackages: ["@screencraft/shared"],
   images: {
     remotePatterns: [
       {
+        // GCS signed URLs
         protocol: "https",
-        hostname: "**.amazonaws.com",
+        hostname: "storage.googleapis.com",
       },
       {
+        // fake-gcs-server (local dev)
         protocol: "http",
         hostname: "localhost",
       },

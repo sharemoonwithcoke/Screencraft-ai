@@ -1,5 +1,8 @@
 import type { FastifyInstance } from "fastify";
+import { eq } from "drizzle-orm";
 import { GeminiService } from "../services/gemini.js";
+import { db } from "../db/index.js";
+import { analysisReports } from "../db/schema.js";
 
 export async function aiRoutes(fastify: FastifyInstance) {
   const gemini = new GeminiService();
@@ -18,7 +21,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
         Connection: "keep-alive",
       });
 
-      const stream = await gemini.streamTranscript(req.body.recordingId, req.body.language);
+      const stream = gemini.streamTranscript(req.body.recordingId, req.body.language);
 
       for await (const chunk of stream) {
         reply.raw.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
@@ -30,15 +33,32 @@ export async function aiRoutes(fastify: FastifyInstance) {
 
   /**
    * POST /ai/suggest
-   * Generate edit suggestions from an analysis report.
+   * Fetch stored analysis issues and generate an edit plan via Prompt 4.
    */
   fastify.post<{
     Body: { recordingId: string; analysisReportId: string };
-  }>("/suggest", async (req) => {
-    const suggestions = await gemini.generateEditSuggestions(
-      req.body.recordingId,
-      req.body.analysisReportId
+  }>("/suggest", async (req, reply) => {
+    const [report] = await db
+      .select()
+      .from(analysisReports)
+      .where(eq(analysisReports.id, req.body.analysisReportId))
+      .limit(1);
+
+    if (!report) {
+      reply.code(404);
+      return { ok: false, error: { code: "NOT_FOUND", message: "Analysis report not found" } };
+    }
+
+    const issues = report.issuesJson as {
+      visual_issues?: unknown[];
+      audio_issues?: unknown[];
+    } ?? {};
+
+    const editPlan = await gemini.generateEditPlan(
+      { visual_issues: (issues.visual_issues ?? []) as never },
+      { audio_issues: (issues.audio_issues ?? []) as never }
     );
-    return { ok: true, data: suggestions };
+
+    return { ok: true, data: editPlan };
   });
 }

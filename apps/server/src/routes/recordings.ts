@@ -88,38 +88,58 @@ export async function recordingsRoutes(fastify: FastifyInstance) {
     reply.code(204);
   });
 
-  // POST /recordings/:id/analyze — trigger Gemini analysis (async job)
+  // POST /recordings/:id/analyze — trigger 3-step Gemini pipeline (async job)
   fastify.post<{ Params: { id: string } }>("/:id/analyze", async (req, reply) => {
-    const body = req.body as { scriptContent?: string };
+    const recordingId = req.params.id;
 
     // Mark as processing
     await db
       .update(recordings)
       .set({ status: "processing", updatedAt: new Date() })
-      .where(eq(recordings.id, req.params.id));
+      .where(eq(recordings.id, recordingId));
 
-    // Fire-and-forget analysis job
-    gemini
-      .analyzeRecording(req.params.id, body?.scriptContent)
-      .then(async (report) => {
+    // Fire-and-forget: visual + speech in parallel, then edit plan
+    (async () => {
+      try {
+        // Step 1: collect transcript (streamed → joined)
+        let transcript = "";
+        for await (const chunk of gemini.streamTranscript(recordingId)) {
+          transcript += chunk;
+        }
+
+        // Step 2: visual + speech analysis run in parallel
+        const [visualResult, audioResult] = await Promise.all([
+          gemini.analyzeVisual(recordingId),
+          gemini.analyzeSpeech(transcript),
+        ]);
+
+        // Step 3: generate edit plan from both results
+        const editPlan = await gemini.generateEditPlan(visualResult, audioResult);
+
+        // Persist combined analysis report
         await db.insert(analysisReports).values({
           id: randomUUID(),
-          recordingId: req.params.id,
-          score: report.score,
-          issuesJson: report.issues,
+          recordingId,
+          score: {},   // score breakdown reserved for future model
+          issuesJson: {
+            visual_issues: visualResult.visual_issues,
+            audio_issues: audioResult.audio_issues,
+            edit_plan: editPlan,
+          },
         });
+
         await db
           .update(recordings)
           .set({ status: "ready", updatedAt: new Date() })
-          .where(eq(recordings.id, req.params.id));
-      })
-      .catch(async (err) => {
-        fastify.log.error(err, "Analysis failed");
+          .where(eq(recordings.id, recordingId));
+      } catch (err) {
+        fastify.log.error(err, "Analysis pipeline failed");
         await db
           .update(recordings)
           .set({ status: "error", updatedAt: new Date() })
-          .where(eq(recordings.id, req.params.id));
-      });
+          .where(eq(recordings.id, recordingId));
+      }
+    })();
 
     reply.code(202);
     return { ok: true, data: { message: "Analysis started" } };

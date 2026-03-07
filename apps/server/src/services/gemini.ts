@@ -335,6 +335,51 @@ Output format:
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // 🔵 REAL-TIME CHUNK ANALYSIS — called by AiCueService per audio chunk
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Per-chunk real-time speech analysis (distinct from post-recording analyzeSpeech).
+   * Called by AiCueService every few seconds with a raw audio buffer.
+   * Uses gemini-1.5-flash for lowest latency.
+   */
+  async analyzeSpeechChunk(audioBuffer: Buffer): Promise<{
+    wpm: number;
+    fillerWords: string[];
+    pauseDetected: boolean;
+    monotone: boolean;
+    transcript: string;
+  }> {
+    const model = this.client.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          mimeType: "audio/webm",
+          data: audioBuffer.toString("base64"),
+        },
+      },
+      `Analyze this short audio chunk from a live screen recording session.
+Return JSON only:
+{
+  "wpm": 120,
+  "fillerWords": ["um", "like"],
+  "pauseDetected": false,
+  "monotone": false,
+  "transcript": "exact words spoken"
+}`,
+    ]);
+
+    return parseJson(result.response.text(), {
+      wpm: 0,
+      fillerWords: [],
+      pauseDetected: false,
+      monotone: false,
+      transcript: "",
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // 🟢 TELEPROMPTER ASSISTANT
   // ─────────────────────────────────────────────────────────────────────────
 
