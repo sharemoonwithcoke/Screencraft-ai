@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
 
   const res = await fetch(
     `${SERVER_URL}/recordings?page=${page}&limit=${limit}`,
-    { headers: { Authorization: `Bearer ${session.user}` } }
+    { headers: { Authorization: `Bearer ${(session as any).accessToken}` } }
   );
 
   const data = await res.json();
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${session.user}`,
+      Authorization: `Bearer ${(session as any).accessToken}`,
     },
     body: JSON.stringify(body),
   });

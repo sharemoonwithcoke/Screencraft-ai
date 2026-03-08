@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
   const res = await fetch(`${SERVER_URL}/upload`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${session.user}` },
+    headers: { Authorization: `Bearer ${(session as any).accessToken}` },
     body: formData,
   });
 

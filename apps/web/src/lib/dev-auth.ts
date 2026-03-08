@@ -4,6 +4,8 @@ import { authOptions } from "./auth";
 const DEV_SESSION = {
   user: { name: "Dev User", email: "dev@local", image: null },
   expires: "2099-01-01T00:00:00.000Z",
+  // Mirrors what the real NextAuth session callback attaches
+  accessToken: "dev-bypass-token",
 };
 
 /**

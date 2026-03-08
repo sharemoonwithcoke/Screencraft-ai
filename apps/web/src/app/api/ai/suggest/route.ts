@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${session.user}`,
+      Authorization: `Bearer ${(session as any).accessToken}`,
     },
     body: JSON.stringify(body),
   });

@@ -21,7 +21,7 @@ async function proxyToServer(
     method,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${session.user}`,
+      Authorization: `Bearer ${(session as any).accessToken}`,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
