@@ -1,14 +1,13 @@
 import { Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { RecordingCard } from "@/components/dashboard/RecordingCard";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getSession } from "@/lib/dev-auth";
 import { redirect } from "next/navigation";
 
 export const metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   if (!session) redirect("/auth/login");
 
   return (

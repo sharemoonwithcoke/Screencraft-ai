@@ -1,12 +1,11 @@
 import { NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getSession } from "@/lib/dev-auth";
 
 const SERVER_URL = process.env.SERVER_URL!;
 
 // Streaming route — proxies Gemini live transcript stream to client
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   if (!session) {
     return new Response(JSON.stringify({ error: "UNAUTHORIZED" }), {
       status: 401,

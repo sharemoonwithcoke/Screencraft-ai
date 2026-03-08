@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getSession } from "@/lib/dev-auth";
 
 const SERVER_URL = process.env.SERVER_URL!;
 
 interface Params { params: { id: string } }
 
 export async function POST(req: NextRequest, { params }: Params) {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   if (!session) {
     return NextResponse.json(
       { ok: false, error: { code: "UNAUTHORIZED", message: "Not authenticated" } },

@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getSession } from "@/lib/dev-auth";
 
 const SERVER_URL = process.env.SERVER_URL!;
 
 // Chunked upload relay: forwards binary blob to server with metadata headers
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   if (!session) {
     return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED" } }, { status: 401 });
   }
