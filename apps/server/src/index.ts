@@ -9,7 +9,12 @@ import { aiRoutes } from "./routes/ai.js";
 import { uploadRoutes } from "./routes/upload.js";
 import { registerSocketHandlers } from "./plugins/websocket.js";
 
-const PORT = Number(process.env.SERVER_PORT ?? 4000);
+const PORT = Number(process.env.PORT ?? process.env.SERVER_PORT ?? 4000);
+
+const ALLOWED_ORIGINS = [
+  process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+  "https://screencraft-web-996567442414.asia-east1.run.app",
+];
 
 async function main() {
   const fastify = Fastify({
@@ -24,7 +29,7 @@ async function main() {
 
   // ── Plugins ────────────────────────────────────────────────────────────────
   await fastify.register(cors, {
-    origin: [process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"],
+    origin: ALLOWED_ORIGINS,
     credentials: true,
   });
 
@@ -44,7 +49,7 @@ async function main() {
 
   const io = new Server(httpServer, {
     cors: {
-      origin: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+      origin: ALLOWED_ORIGINS,
       credentials: true,
     },
     maxHttpBufferSize: 50 * 1024 * 1024, // 50MB per WS message (video chunks)

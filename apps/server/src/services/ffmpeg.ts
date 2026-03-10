@@ -52,7 +52,7 @@ export class FFmpegService {
         .audioCodec("aac")
         .outputOptions(["-movflags +faststart"])
         .output(outputPath)
-        .on("end", resolve)
+        .on("end", () => resolve())
         .on("error", reject)
         .run();
     });
@@ -99,7 +99,7 @@ export class FFmpegService {
         cmd.videoCodec("libvpx-vp9").audioCodec("libopus");
       }
 
-      cmd.output(tmpOutput).on("end", resolve).on("error", reject).run();
+      cmd.output(tmpOutput).on("end", () => resolve()).on("error", reject).run();
     });
 
     const buffer = await readFile(tmpOutput);
@@ -121,7 +121,7 @@ export class FFmpegService {
         .seekInput(timestampMs / 1000)
         .frames(1)
         .output(tmpPath)
-        .on("end", resolve)
+        .on("end", () => resolve())
         .on("error", reject)
         .run();
     });

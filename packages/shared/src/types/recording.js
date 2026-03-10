@@ -1,0 +1,2 @@
+// ── Recording status lifecycle ─────────────────────────────────────────────
+export {};

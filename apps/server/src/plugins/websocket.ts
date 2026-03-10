@@ -3,6 +3,7 @@ import { AiCueService } from "../services/ai-cue.js";
 import { StorageService } from "../services/storage.js";
 import { db } from "../db/index.js";
 import { recordingChunks } from "../db/schema.js";
+import { randomUUID } from "crypto";
 
 /**
  * Registers all Socket.io event handlers.
@@ -48,6 +49,7 @@ export function registerSocketHandlers(io: Server) {
 
         // 2. Insert chunk record
         await db.insert(recordingChunks).values({
+          id: randomUUID(),
           recordingId: payload.recordingId,
           index: payload.index,
           s3Key,
