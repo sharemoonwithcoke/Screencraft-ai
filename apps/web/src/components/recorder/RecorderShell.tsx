@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { ArrowLeft, Monitor, AppWindow, Crop, Circle, LayoutDashboard, RotateCcw } from "lucide-react";
 import { RecorderControls } from "./RecorderControls";
 import { CameraPreview } from "./CameraPreview";
@@ -30,6 +31,15 @@ const REGION_OPTIONS = [
  */
 export function RecorderShell() {
   const router = useRouter();
+  const { status } = useSession();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.replace("/auth/login?callbackUrl=/recorder");
+    }
+  }, [status, router]);
+
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [displayStream, setDisplayStream] = useState<MediaStream | null>(null);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
@@ -88,6 +98,15 @@ export function RecorderShell() {
     setRecordingId(null);
     reset();
   }, [reset]);
+
+  // ── Auth loading / redirect ─────────────────────────────────────────────
+  if (status === "loading" || status === "unauthenticated") {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
+      </div>
+    );
+  }
 
   // ── Pre-recording start screen ──────────────────────────────────────────
   if (state === "idle") {

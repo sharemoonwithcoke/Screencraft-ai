@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/dev-auth";
 
 const SERVER_URL = process.env.SERVER_URL!;
+const DEV_MODE = process.env.DEV_BYPASS_AUTH === "true";
 
 async function proxyToServer(
   req: NextRequest,
@@ -15,6 +16,11 @@ async function proxyToServer(
       { ok: false, error: { code: "UNAUTHORIZED", message: "Not authenticated" } },
       { status: 401 }
     );
+  }
+
+  // Local dev: no backend running, return success stub
+  if (DEV_MODE) {
+    return NextResponse.json({ ok: true, data: { ...(body as object), path } });
   }
 
   const res = await fetch(`${SERVER_URL}${path}`, {

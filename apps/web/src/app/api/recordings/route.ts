@@ -4,10 +4,17 @@ import type { CreateRecordingRequest, ApiResponse } from "@screencraft/shared";
 
 const SERVER_URL = process.env.SERVER_URL!;
 
+const DEV_MODE = process.env.DEV_BYPASS_AUTH === "true";
+
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Not authenticated" } }, { status: 401 });
+  }
+
+  // Local dev: no backend running, return empty list
+  if (DEV_MODE) {
+    return NextResponse.json({ ok: true, data: [], meta: { total: 0, page: 1, limit: 20 } });
   }
 
   const { searchParams } = new URL(req.url);
@@ -30,6 +37,12 @@ export async function POST(req: NextRequest) {
   }
 
   const body: CreateRecordingRequest = await req.json();
+
+  // Local dev: return a mock recording so the recorder flow works without a backend
+  if (DEV_MODE) {
+    const mockId = `dev_${Date.now()}`;
+    return NextResponse.json({ ok: true, data: { id: mockId, title: body.title, region: body.region, status: "recording" } });
+  }
 
   const res = await fetch(`${SERVER_URL}/recordings`, {
     method: "POST",

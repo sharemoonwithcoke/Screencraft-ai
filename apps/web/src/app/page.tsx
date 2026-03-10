@@ -73,7 +73,7 @@ export default function HomePage() {
         </p>
         <div className="flex flex-col sm:flex-row gap-4">
           <Link
-            href="/recorder"
+            href="/auth/login?callbackUrl=/recorder"
             className="bg-brand-500 hover:bg-brand-600 text-white px-8 py-3.5 rounded-2xl font-semibold text-base transition-all duration-200 shadow-lg shadow-brand-500/25"
           >
             Start recording
