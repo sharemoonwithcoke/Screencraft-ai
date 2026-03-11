@@ -2,11 +2,14 @@ import type { Recording } from "@screencraft/shared";
 
 /**
  * In-memory recording store for local dev (DEV_BYPASS_AUTH=true).
- * Persists for the lifetime of the Next.js server process.
+ * Uses globalThis so the same Map is shared across all Next.js module
+ * contexts (Route Handlers, Server Components, etc.) within one process.
  * Replace with real DB queries when backend is connected.
  */
 
-const store = new Map<string, Recording>();
+const g = globalThis as any;
+if (!g.__devRecordingStore) g.__devRecordingStore = new Map<string, Recording>();
+const store: Map<string, Recording> = g.__devRecordingStore;
 
 export function createRecording(title: string, region: string): Recording {
   const id = `dev_${Date.now()}`;

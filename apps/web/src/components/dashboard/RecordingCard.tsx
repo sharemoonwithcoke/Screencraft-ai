@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { BarChart2, Clock, MoreHorizontal } from "lucide-react";
 import type { Recording } from "@screencraft/shared";
