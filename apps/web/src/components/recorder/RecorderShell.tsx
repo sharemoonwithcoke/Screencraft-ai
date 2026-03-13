@@ -1,14 +1,19 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Monitor, AppWindow, Crop, Circle, LayoutDashboard, RotateCcw } from "lucide-react";
+import { useSession } from "next-auth/react";
+import {
+  ArrowLeft, Monitor, AppWindow, Crop, Circle, LayoutDashboard,
+  RotateCcw, FileText, ChevronDown, ChevronUp, Sparkles,
+} from "lucide-react";
 import { RecorderControls } from "./RecorderControls";
 import { CameraPreview } from "./CameraPreview";
 import { Teleprompter } from "./Teleprompter";
 import { WaveformPreview } from "./WaveformPreview";
 import { AICueOverlay } from "./AICueOverlay";
 import { ZoomCanvas } from "./ZoomCanvas";
+import { AIAssistantPanel } from "./AIAssistantPanel";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { cn } from "@/lib/cn";
@@ -19,23 +24,37 @@ const REGION_OPTIONS = [
   { value: "custom",     label: "Custom area", icon: Crop,      desc: "Draw a custom capture region" },
 ] as const;
 
-/**
- * RecorderShell — top-level compositor for the recording experience.
- * Manages media stream acquisition and wires up all sub-components.
- *
- * Three screen states:
- *  idle    → pre-recording start screen
- *  recording/paused → live recording view with bottom dock
- *  stopped → post-recording summary screen
- */
+// Mock AI optimize: structures the script with better pacing markers
+function mockAiOptimize(text: string): string {
+  if (!text.trim()) return text;
+  const lines = text.split("\n").filter((l) => l.trim());
+  const result: string[] = [];
+  lines.forEach((line, i) => {
+    if (i > 0 && i % 3 === 0) result.push(""); // paragraph breaks for pacing
+    result.push(line.trim());
+  });
+  return result.join("\n");
+}
+
+
 export function RecorderShell() {
   const router = useRouter();
+  const { status } = useSession();
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.replace("/auth/login?callbackUrl=/recorder");
+    }
+  }, [status, router]);
+
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [displayStream, setDisplayStream] = useState<MediaStream | null>(null);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [teleprompterContent, setTeleprompterContent] = useState("");
   const [showTeleprompter, setShowTeleprompter] = useState(false);
   const [region, setRegion] = useState<"fullscreen" | "window" | "custom">("fullscreen");
+  const [showScriptEditor, setShowScriptEditor] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
 
   const { on: wsOn, sendChunk } = useWebSocket(recordingId);
 
@@ -50,6 +69,24 @@ export function RecorderShell() {
     });
 
   const handleStart = useCallback(async () => {
+    // Request media FIRST — getDisplayMedia requires an active user gesture.
+    // Any await before this call (e.g. fetch) consumes the transient activation
+    // and causes NotAllowedError in Chromium.
+    const display = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 60 },
+      audio: false,
+    });
+    // Microphone is optional — some environments deny it or have no device
+    let audio: MediaStream | null = null;
+    try {
+      audio = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+    } catch {
+      // Continue without mic; recording will have no audio track
+    }
+
+    // Create recording entry after media is secured
     const res = await fetch("/api/recordings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -58,20 +95,16 @@ export function RecorderShell() {
     const { data } = await res.json();
     setRecordingId(data.id);
 
-    const display = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 60 },
-      audio: false,
-    });
-    const audio = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true },
-    });
-
     setDisplayStream(display);
     setAudioStream(audio);
-    await start(display, audio);
-  }, [region, start]);
+    if (teleprompterContent.trim()) setShowTeleprompter(true);
+    await start(display, audio ?? undefined);
+  }, [region, start, teleprompterContent]);
 
   const handleStop = useCallback(async () => {
+    // Stop all media tracks immediately so camera/mic indicator lights turn off
+    displayStream?.getTracks().forEach((t) => t.stop());
+    audioStream?.getTracks().forEach((t) => t.stop());
     stop();
     if (recordingId) {
       await fetch(`/api/recordings/${recordingId}`, {
@@ -80,20 +113,37 @@ export function RecorderShell() {
         body: JSON.stringify({ status: "processing" }),
       });
     }
-  }, [stop, recordingId]);
+  }, [stop, recordingId, displayStream, audioStream]);
 
   const handleReset = useCallback(() => {
     setDisplayStream(null);
     setAudioStream(null);
     setRecordingId(null);
+    setShowTeleprompter(false);
     reset();
   }, [reset]);
+
+  const handleAiOptimize = useCallback(() => {
+    setOptimizing(true);
+    setTimeout(() => {
+      setTeleprompterContent((prev) => mockAiOptimize(prev));
+      setOptimizing(false);
+    }, 800);
+  }, []);
+
+  // ── Auth loading / redirect ─────────────────────────────────────────────
+  if (status === "loading" || status === "unauthenticated") {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
+      </div>
+    );
+  }
 
   // ── Pre-recording start screen ──────────────────────────────────────────
   if (state === "idle") {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex flex-col">
-        {/* Top bar */}
         <div className="flex items-center px-6 py-4 border-b border-white/10">
           <button
             onClick={() => router.push("/dashboard")}
@@ -104,9 +154,7 @@ export function RecorderShell() {
           </button>
         </div>
 
-        {/* Center content */}
-        <div className="flex-1 flex flex-col items-center justify-center px-6 gap-10">
-          {/* Title */}
+        <div className="flex-1 flex flex-col items-center justify-center px-6 gap-8 py-10">
           <div className="text-center">
             <h1 className="text-3xl font-bold mb-2">New recording</h1>
             <p className="text-slate-400 text-sm">Choose what to capture, then press Record</p>
@@ -130,6 +178,49 @@ export function RecorderShell() {
                 <span className="text-xs text-slate-500 font-normal text-center">{desc}</span>
               </button>
             ))}
+          </div>
+
+          {/* Script editor (collapsible) */}
+          <div className="w-full max-w-xl bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+            <button
+              onClick={() => setShowScriptEditor((v) => !v)}
+              className="w-full flex items-center justify-between px-5 py-4 text-sm font-medium text-slate-300 hover:text-white transition-colors duration-200"
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-slate-400" />
+                Script / Teleprompter
+                {teleprompterContent.trim() && (
+                  <span className="text-xs bg-brand-500/20 text-brand-300 px-2 py-0.5 rounded-full">
+                    {teleprompterContent.split("\n").filter(Boolean).length} lines
+                  </span>
+                )}
+              </div>
+              {showScriptEditor ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+            </button>
+
+            {showScriptEditor && (
+              <div className="border-t border-white/10">
+                <textarea
+                  value={teleprompterContent}
+                  onChange={(e) => setTeleprompterContent(e.target.value)}
+                  placeholder="Paste or write your script here. It will scroll automatically while you record."
+                  className="w-full h-40 bg-transparent text-sm text-slate-300 placeholder-slate-600 px-5 py-4 resize-none focus:outline-none font-mono leading-relaxed"
+                />
+                <div className="flex items-center justify-between px-5 py-3 border-t border-white/10">
+                  <span className="text-xs text-slate-500">
+                    {teleprompterContent.trim() ? `${teleprompterContent.trim().split(/\s+/).length} words` : "No script added"}
+                  </span>
+                  <button
+                    onClick={handleAiOptimize}
+                    disabled={!teleprompterContent.trim() || optimizing}
+                    className="flex items-center gap-1.5 text-xs font-medium text-brand-400 hover:text-brand-300 disabled:opacity-40 transition-colors duration-200"
+                  >
+                    <Sparkles className={cn("w-3.5 h-3.5", optimizing && "animate-spin")} />
+                    {optimizing ? "Optimizing…" : "AI Optimize"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Start button */}
@@ -166,7 +257,6 @@ export function RecorderShell() {
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center gap-6 px-6">
-          {/* Status icon */}
           <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center">
             <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -174,12 +264,10 @@ export function RecorderShell() {
               </svg>
             </div>
           </div>
-
           <div className="text-center">
             <h2 className="text-2xl font-bold mb-1">Recording saved</h2>
             <p className="text-slate-400 text-sm">Your recording is being processed</p>
           </div>
-
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={() => router.push("/dashboard")}
@@ -204,7 +292,7 @@ export function RecorderShell() {
   // ── Live recording view (recording / paused) ─────────────────────────────
   return (
     <div className="relative min-h-screen bg-slate-950 flex flex-col">
-      {/* Top bar — back button, dimmed during active recording */}
+      {/* Top bar */}
       <div className={cn(
         "flex items-center px-6 py-3 border-b border-white/10 transition-opacity duration-300 z-20",
         state === "recording" ? "opacity-30 hover:opacity-100" : "opacity-100"
@@ -217,14 +305,15 @@ export function RecorderShell() {
           Dashboard
         </button>
         {state === "recording" && (
-          <div className="ml-auto flex items-center gap-2 text-xs text-slate-500">
+          <div className="ml-auto flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            Recording in progress
+            <span className="text-xs text-slate-500">Recording in progress</span>
           </div>
         )}
       </div>
 
-      {/* AI cue overlay */}
+      <AIAssistantPanel isRecording={state === "recording"} elapsed={elapsed} />
+
       <AICueOverlay wsOn={wsOn} />
 
       {/* Main recording viewport */}
@@ -254,6 +343,7 @@ export function RecorderShell() {
         </div>
       </div>
 
+      {/* Teleprompter — shows if there's a script and toggled on */}
       {showTeleprompter && (
         <Teleprompter
           content={teleprompterContent}

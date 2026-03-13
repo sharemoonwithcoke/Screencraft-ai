@@ -24,12 +24,12 @@ export function useRecorder({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const start = useCallback(
-    async (displayStream: MediaStream, audioStream: MediaStream) => {
+    async (displayStream: MediaStream, audioStream?: MediaStream) => {
       try {
-        // Merge display + audio tracks
+        // Merge display + audio tracks (audio optional)
         const combined = new MediaStream([
           ...displayStream.getVideoTracks(),
-          ...audioStream.getAudioTracks(),
+          ...(audioStream?.getAudioTracks() ?? []),
         ]);
         streamRef.current = combined;
 

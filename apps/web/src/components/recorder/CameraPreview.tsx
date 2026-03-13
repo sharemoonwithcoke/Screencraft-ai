@@ -12,10 +12,11 @@ type Shape = "circle" | "square";
 export function CameraPreview() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const streamRef = useRef<MediaStream | null>(null); // ref so cleanup always sees latest stream
 
   const [shape, setShape] = useState<Shape>("circle");
-  const [pos, setPos] = useState({ x: 24, y: 24 }); // px from bottom-right
-  const [size, setSize] = useState(140); // px
+  const [pos, setPos] = useState({ x: 24, y: 24 });
+  const [size, setSize] = useState(140);
   const [stream, setStream] = useState<MediaStream | null>(null);
 
   const isDraggingRef = useRef(false);
@@ -25,17 +26,18 @@ export function CameraPreview() {
     navigator.mediaDevices
       .getUserMedia({ video: { facingMode: "user" }, audio: false })
       .then((s) => {
+        streamRef.current = s;
         setStream(s);
-        if (videoRef.current) {
-          videoRef.current.srcObject = s;
-        }
+        if (videoRef.current) videoRef.current.srcObject = s;
       })
       .catch(() => {
         // Camera not available or denied — PiP hidden gracefully
       });
 
     return () => {
-      stream?.getTracks().forEach((t) => t.stop());
+      // Use ref so this cleanup always has the actual stream, not the initial null
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     };
   }, []);
 
