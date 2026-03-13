@@ -76,9 +76,15 @@ export function RecorderShell() {
       video: { frameRate: 60 },
       audio: false,
     });
-    const audio = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true },
-    });
+    // Microphone is optional — some environments deny it or have no device
+    let audio: MediaStream | null = null;
+    try {
+      audio = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+    } catch {
+      // Continue without mic; recording will have no audio track
+    }
 
     // Create recording entry after media is secured
     const res = await fetch("/api/recordings", {
@@ -92,7 +98,7 @@ export function RecorderShell() {
     setDisplayStream(display);
     setAudioStream(audio);
     if (teleprompterContent.trim()) setShowTeleprompter(true);
-    await start(display, audio);
+    await start(display, audio ?? undefined);
   }, [region, start, teleprompterContent]);
 
   const handleStop = useCallback(async () => {
