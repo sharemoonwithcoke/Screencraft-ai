@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   ArrowLeft, Monitor, AppWindow, Crop, Circle, LayoutDashboard,
-  RotateCcw, FileText, ChevronDown, ChevronUp, Sparkles, X, Lightbulb,
+  RotateCcw, FileText, ChevronDown, ChevronUp, Sparkles,
 } from "lucide-react";
 import { RecorderControls } from "./RecorderControls";
 import { CameraPreview } from "./CameraPreview";
@@ -13,6 +13,7 @@ import { Teleprompter } from "./Teleprompter";
 import { WaveformPreview } from "./WaveformPreview";
 import { AICueOverlay } from "./AICueOverlay";
 import { ZoomCanvas } from "./ZoomCanvas";
+import { AIAssistantPanel } from "./AIAssistantPanel";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { cn } from "@/lib/cn";
@@ -35,49 +36,6 @@ function mockAiOptimize(text: string): string {
   return result.join("\n");
 }
 
-// ── AI suggestion panel shown during recording ────────────────────────────────
-const MOCK_TIPS = [
-  "Speak at a steady pace — aim for 120–150 words per minute.",
-  "Make eye contact with the camera, not the screen.",
-  "Pause briefly after key points to let them land.",
-  "Avoid filler words: 'um', 'uh', 'like'.",
-  "Keep each slide to one core idea.",
-];
-
-function AISuggestionPanel({ onClose }: { onClose: () => void }) {
-  const [activeTip, setActiveTip] = useState(0);
-
-  useEffect(() => {
-    const t = setInterval(() => setActiveTip((i) => (i + 1) % MOCK_TIPS.length), 8000);
-    return () => clearInterval(t);
-  }, []);
-
-  return (
-    <div className="fixed right-4 top-1/2 -translate-y-1/2 w-64 z-30 bg-slate-900/95 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-300 uppercase tracking-wider">
-          <Lightbulb className="w-3.5 h-3.5 text-yellow-400" />
-          AI Suggestions
-        </div>
-        <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/10 text-slate-500 hover:text-white transition-all">
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
-      <div className="p-4 min-h-[100px] flex items-start">
-        <p className="text-sm text-slate-300 leading-relaxed transition-all duration-500">{MOCK_TIPS[activeTip]}</p>
-      </div>
-      <div className="px-4 pb-3 flex gap-1">
-        {MOCK_TIPS.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => setActiveTip(i)}
-            className={cn("flex-1 h-1 rounded-full transition-all duration-200", i === activeTip ? "bg-brand-400" : "bg-white/20")}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export function RecorderShell() {
   const router = useRouter();
@@ -94,7 +52,6 @@ export function RecorderShell() {
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [teleprompterContent, setTeleprompterContent] = useState("");
   const [showTeleprompter, setShowTeleprompter] = useState(false);
-  const [showAISuggestions, setShowAISuggestions] = useState(true);
   const [region, setRegion] = useState<"fullscreen" | "window" | "custom">("fullscreen");
   const [showScriptEditor, setShowScriptEditor] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
@@ -154,7 +111,6 @@ export function RecorderShell() {
     setAudioStream(null);
     setRecordingId(null);
     setShowTeleprompter(false);
-    setShowAISuggestions(true);
     reset();
   }, [reset]);
 
@@ -347,10 +303,7 @@ export function RecorderShell() {
         )}
       </div>
 
-      {/* AI suggestion panel (right side, always visible during recording) */}
-      {showAISuggestions && (
-        <AISuggestionPanel onClose={() => setShowAISuggestions(false)} />
-      )}
+      <AIAssistantPanel isRecording={state === "recording"} elapsed={elapsed} />
 
       <AICueOverlay wsOn={wsOn} />
 

@@ -14,6 +14,7 @@ export function useTeleprompter({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [missedLines, setMissedLines] = useState<Set<number>>(new Set());
   const [isScrolling, setIsScrolling] = useState(false);
+  const [spokenLineIndex, setSpokenLineIndex] = useState(-1);
   const animRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const startScrollTopRef = useRef(0);
@@ -76,6 +77,23 @@ export function useTeleprompter({
     [stopAutoScroll]
   );
 
+  // Track spoken lines based on scroll position
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const maxScroll = scrollHeight - clientHeight;
+      if (maxScroll <= 0) { setSpokenLineIndex(-1); return; }
+      const progress = scrollTop / maxScroll;
+      // The line currently at the top-center of the viewport is being read
+      // Lines above that fraction of total lines are "spoken"
+      setSpokenLineIndex(Math.floor(progress * lines.length) - 1);
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => container.removeEventListener("scroll", onScroll);
+  }, [lines.length]);
+
   useEffect(() => {
     return () => {
       if (animRef.current !== null) cancelAnimationFrame(animRef.current);
@@ -86,6 +104,7 @@ export function useTeleprompter({
     containerRef,
     lines,
     missedLines,
+    spokenLineIndex,
     isScrolling,
     startAutoScroll,
     stopAutoScroll,

@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Upload, Scissors, Play, Download, RotateCcw, CheckCircle,
-  Film, Volume2, Captions, Star, ChevronRight, Loader2,
+  Film, Volume2, Captions, Star, ChevronRight, Loader2, Library,
+  Clock, Video,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import type { Recording } from "@screencraft/shared";
 
 type Step = "upload" | "processing" | "preview" | "done";
+type SourceTab = "local" | "recordings";
 
 const EDIT_OPTIONS = [
   { id: "silence", icon: Volume2,   label: "Remove silences",  desc: "Auto-detect and cut dead air gaps" },
@@ -22,12 +25,27 @@ interface Props { recordingId: string }
 
 export function AIEditStudio({ recordingId }: Props) {
   const [step, setStep] = useState<Step>("upload");
+  const [sourceTab, setSourceTab] = useState<SourceTab>("local");
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<OptionId>>(new Set(["silence", "captions"]));
   const [progress, setProgress] = useState(0);
+  const [recordings, setRecordings] = useState<Recording[] | null>(null);
+  const [loadingRecordings, setLoadingRecordings] = useState(false);
+  const [selectedRecording, setSelectedRecording] = useState<Recording | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load recordings when tab switches
+  useEffect(() => {
+    if (sourceTab !== "recordings" || recordings !== null) return;
+    setLoadingRecordings(true);
+    fetch("/api/recordings")
+      .then((r) => r.json())
+      .then((body) => setRecordings(body.data ?? []))
+      .catch(() => setRecordings([]))
+      .finally(() => setLoadingRecordings(false));
+  }, [sourceTab, recordings]);
 
   const handleFile = useCallback((f: File) => {
     if (!f.type.startsWith("video/")) return;
@@ -73,14 +91,18 @@ export function AIEditStudio({ recordingId }: Props) {
     if (preview) URL.revokeObjectURL(preview);
     setPreview(null);
     setProgress(0);
+    setSelectedRecording(null);
   };
 
+  const isVideoReady = sourceTab === "local" ? !!file : !!selectedRecording;
+
   const download = () => {
-    if (!preview) return;
-    const a = document.createElement("a");
-    a.href = preview;
-    a.download = file?.name.replace(/\.[^.]+$/, "_edited.webm") ?? "edited.webm";
-    a.click();
+    if (preview) {
+      const a = document.createElement("a");
+      a.href = preview;
+      a.download = file?.name.replace(/\.[^.]+$/, "_edited.webm") ?? `${selectedRecording?.title ?? "recording"}_edited.webm`;
+      a.click();
+    }
     setStep("done");
   };
 
@@ -88,48 +110,130 @@ export function AIEditStudio({ recordingId }: Props) {
   if (step === "upload") {
     return (
       <main className="flex-1 max-w-3xl mx-auto w-full px-6 py-10 flex flex-col gap-8">
-        {/* Drop zone */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={cn(
-            "border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all duration-200",
-            dragging
-              ? "border-brand-400 bg-brand-400/10"
-              : file
-              ? "border-green-400 bg-green-400/10"
-              : "border-white/20 hover:border-white/40 hover:bg-white/5"
-          )}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/*"
-            className="hidden"
-            onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
-          />
-          {file ? (
-            <>
-              <CheckCircle className="w-10 h-10 text-green-400" />
-              <p className="text-white font-medium">{file.name}</p>
-              <p className="text-slate-400 text-sm">{(file.size / 1024 / 1024).toFixed(1)} MB — click to change</p>
-            </>
-          ) : (
-            <>
-              <Upload className="w-10 h-10 text-slate-400" />
-              <div className="text-center">
-                <p className="text-white font-medium">Drop your video here</p>
-                <p className="text-slate-400 text-sm mt-1">or click to browse — MP4, MOV, WebM</p>
-              </div>
-            </>
-          )}
+        {/* Source tabs */}
+        <div className="flex gap-1 bg-white/5 p-1 rounded-xl self-start">
+          <button
+            onClick={() => setSourceTab("local")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+              sourceTab === "local" ? "bg-white/10 text-white" : "text-slate-400 hover:text-white"
+            )}
+          >
+            <Upload className="w-4 h-4" />
+            Local file
+          </button>
+          <button
+            onClick={() => setSourceTab("recordings")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+              sourceTab === "recordings" ? "bg-white/10 text-white" : "text-slate-400 hover:text-white"
+            )}
+          >
+            <Library className="w-4 h-4" />
+            From recordings
+          </button>
         </div>
 
-        {/* Preview thumbnail */}
-        {preview && (
-          <video src={preview} className="w-full rounded-2xl max-h-48 object-contain bg-black" muted />
+        {/* Source panel: local upload */}
+        {sourceTab === "local" && (
+          <>
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={cn(
+                "border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all duration-200",
+                dragging
+                  ? "border-brand-400 bg-brand-400/10"
+                  : file
+                  ? "border-green-400 bg-green-400/10"
+                  : "border-white/20 hover:border-white/40 hover:bg-white/5"
+              )}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                className="hidden"
+                onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
+              />
+              {file ? (
+                <>
+                  <CheckCircle className="w-10 h-10 text-green-400" />
+                  <p className="text-white font-medium">{file.name}</p>
+                  <p className="text-slate-400 text-sm">{(file.size / 1024 / 1024).toFixed(1)} MB — click to change</p>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-10 h-10 text-slate-400" />
+                  <div className="text-center">
+                    <p className="text-white font-medium">Drop your video here</p>
+                    <p className="text-slate-400 text-sm mt-1">or click to browse — MP4, MOV, WebM</p>
+                  </div>
+                </>
+              )}
+            </div>
+            {preview && (
+              <video src={preview} className="w-full rounded-2xl max-h-48 object-contain bg-black" muted />
+            )}
+          </>
+        )}
+
+        {/* Source panel: from recordings */}
+        {sourceTab === "recordings" && (
+          <div className="flex flex-col gap-3">
+            {loadingRecordings ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 text-brand-400 animate-spin" />
+              </div>
+            ) : !recordings || recordings.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                <Video className="w-10 h-10 text-slate-600" />
+                <p className="text-slate-400 text-sm">No recordings found.<br />Go to the recorder to create one first.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 max-h-72 overflow-y-auto pr-1">
+                {recordings.map((rec) => (
+                  <button
+                    key={rec.id}
+                    onClick={() => setSelectedRecording(rec)}
+                    className={cn(
+                      "flex items-center gap-4 p-4 rounded-xl border text-left transition-all duration-200",
+                      selectedRecording?.id === rec.id
+                        ? "border-brand-400 bg-brand-400/10"
+                        : "border-white/10 hover:border-white/25 bg-white/5"
+                    )}
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
+                      {selectedRecording?.id === rec.id
+                        ? <CheckCircle className="w-5 h-5 text-brand-400" />
+                        : <Video className="w-5 h-5 text-slate-400" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={cn("text-sm font-medium truncate", selectedRecording?.id === rec.id ? "text-white" : "text-slate-300")}>
+                        {rec.title}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <Clock className="w-3 h-3 text-slate-600" />
+                        <span className="text-xs text-slate-500">
+                          {new Date(rec.createdAt).toLocaleDateString()}
+                        </span>
+                        <span className={cn(
+                          "text-xs px-1.5 py-0.5 rounded-full capitalize font-medium",
+                          rec.status === "ready" ? "bg-green-500/20 text-green-400" :
+                          rec.status === "processing" ? "bg-blue-500/20 text-blue-400" :
+                          "bg-white/10 text-slate-400"
+                        )}>
+                          {rec.status}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Edit options */}
@@ -159,7 +263,7 @@ export function AIEditStudio({ recordingId }: Props) {
 
         <button
           onClick={startProcessing}
-          disabled={!file || selected.size === 0}
+          disabled={!isVideoReady || selected.size === 0}
           className="flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white px-8 py-3.5 rounded-xl font-semibold transition-all duration-200 self-center"
         >
           <Scissors className="w-4 h-4" />
@@ -221,11 +325,17 @@ export function AIEditStudio({ recordingId }: Props) {
 
         {/* Video preview */}
         <div className="rounded-2xl overflow-hidden bg-black shadow-xl shadow-black/50">
-          <video
-            src={preview ?? undefined}
-            controls
-            className="w-full max-h-[400px] object-contain"
-          />
+          {preview ? (
+            <video src={preview} controls className="w-full max-h-[400px] object-contain" />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-48 gap-3">
+              <CheckCircle className="w-10 h-10 text-green-400" />
+              <p className="text-slate-400 text-sm">
+                {selectedRecording?.title ?? "Recording"} — edited output ready
+              </p>
+              <p className="text-slate-600 text-xs">Video preview requires local file or backend stream</p>
+            </div>
+          )}
         </div>
 
         {/* Edit summary chips */}

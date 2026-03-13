@@ -21,7 +21,7 @@ interface Props {
  * The AI highlights missed lines in real time via WebSocket events.
  */
 export function Teleprompter({ content, onChange, isRecording, wsOn }: Props) {
-  const { containerRef, lines, missedLines, isScrolling, startAutoScroll, stopAutoScroll, markLineMissed } =
+  const { containerRef, lines, missedLines, spokenLineIndex, isScrolling, startAutoScroll, stopAutoScroll, markLineMissed } =
     useTeleprompter({ content });
 
   // Subscribe to AI missed-line events
@@ -79,6 +79,8 @@ export function Teleprompter({ content, onChange, isRecording, wsOn }: Props) {
                 "text-sm leading-relaxed font-mono transition-colors duration-300",
                 missedLines.has(i)
                   ? "text-red-400 bg-red-400/10 rounded-lg px-2 -mx-2"
+                  : i <= spokenLineIndex
+                  ? "text-slate-600 line-through decoration-slate-700"
                   : "text-slate-300"
               )}
             >
