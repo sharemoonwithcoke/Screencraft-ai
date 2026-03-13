@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, BarChart2, Scissors, Download, Video } from "lucide-react";
 import { getRecording } from "@/lib/dev-store";
+import { RecordingTitle } from "@/components/recordings/RecordingTitle";
 
 export const metadata = { title: "Recording" };
 
@@ -38,7 +39,7 @@ export default async function RecordingDetailPage({ params }: Props) {
           <Link href="/dashboard" className="p-2 rounded-xl hover:bg-slate-100 transition-colors duration-200">
             <ArrowLeft className="w-5 h-5 text-slate-600" />
           </Link>
-          <h1 className="text-lg font-semibold text-slate-900 flex-1 truncate">{recording.title}</h1>
+          <RecordingTitle id={params.id} initialTitle={recording.title} />
           <div className="flex items-center gap-2">
             <Link
               href={`/recordings/${params.id}/analyze`}
