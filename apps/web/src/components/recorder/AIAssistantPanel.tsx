@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Sparkles, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Sparkles, X, GripVertical } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 // ── VU-meter bars (animated frequency visualizer) ─────────────────────────────
@@ -47,7 +47,7 @@ function Indicator({ label, emojis, level }: IndicatorProps) {
   const barColor = level < 0.35 ? "bg-red-500" : level < 0.65 ? "bg-yellow-400" : "bg-green-400";
 
   return (
-    <div className="flex-1 bg-white/5 rounded-xl px-3 py-2.5 flex flex-col gap-2">
+    <div className="flex-1 bg-slate-100 rounded-xl px-3 py-2.5 flex flex-col gap-2">
       <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">{label}</p>
       <div className="flex justify-between items-center">
         {emojis.map((e, i) => (
@@ -94,6 +94,10 @@ interface Props {
 
 export function AIAssistantPanel({ isRecording, elapsed }: Props) {
   const [open, setOpen] = useState(true);
+  const [width, setWidth] = useState(288); // px, default 72 * 4
+  const [height, setHeight] = useState(360); // px
+  const panelRef = useRef<HTMLDivElement>(null);
+  const resizing = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
   const [aiState, setAIState] = useState<AIState>("recording");
   const [aiText, setAIText] = useState(COACHING_MSGS[0]);
   const [confidence, setConfidence] = useState(0.75);
@@ -162,6 +166,26 @@ export function AIAssistantPanel({ isRecording, elapsed }: Props) {
     setAIText(COACHING_MSGS[coachingIdx.current]);
   }, []);
 
+  // ── Resize drag handling ──────────────────────────────────────────────────
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizing.current = { startX: e.clientX, startY: e.clientY, startW: width, startH: height };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizing.current) return;
+      const dw = resizing.current.startX - ev.clientX; // drag left → wider
+      const dh = resizing.current.startY - ev.clientY; // drag up → taller
+      setWidth(Math.max(220, Math.min(520, resizing.current.startW + dw)));
+      setHeight(Math.max(260, Math.min(700, resizing.current.startH + dh)));
+    };
+    const onUp = () => {
+      resizing.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [width, height]);
+
   // ── Collapsed: just floating icon ──────────────────────────────────────────
   if (!open) {
     return (
@@ -181,44 +205,60 @@ export function AIAssistantPanel({ isRecording, elapsed }: Props) {
 
   // ── Expanded panel ──────────────────────────────────────────────────────────
   return (
-    <div className="fixed right-4 bottom-24 z-40 w-72 bg-slate-900/97 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden flex flex-col">
+    <div
+      ref={panelRef}
+      style={{ width, height, minWidth: 220, minHeight: 260 }}
+      className="fixed right-4 bottom-24 z-40 bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-black/20 overflow-hidden flex flex-col select-none"
+    >
+      {/* Resize grip — top-left corner, drag to resize */}
+      <div
+        onMouseDown={onResizeStart}
+        className="absolute top-0 left-0 w-6 h-6 flex items-center justify-center cursor-nw-resize z-10 text-slate-300 hover:text-slate-500 transition-colors"
+        title="Drag to resize"
+      >
+        <GripVertical className="w-3 h-3 rotate-45" />
+      </div>
+
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-brand-400" />
-          <span className="text-xs font-semibold text-white uppercase tracking-wider">AI Assistant</span>
+          <Sparkles className="w-4 h-4 text-brand-500" />
+          <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">AI Assistant</span>
           {(aiState === "drift_warning" || aiState === "generating") && (
-            <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-full font-medium">Alert</span>
+            <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">Alert</span>
           )}
         </div>
-        <button onClick={() => setOpen(false)} className="p-1 rounded-lg hover:bg-white/10 text-slate-500 hover:text-white transition-colors">
+        <button onClick={() => setOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
 
       {/* Meters */}
-      <div className="flex gap-2 px-3 pt-3">
+      <div className="flex gap-2 px-3 pt-3 flex-shrink-0">
         <Indicator label="Confidence" emojis={["😟", "😐", "😊"]} level={confidence} />
         <Indicator label="Speech rate" emojis={["🐢", "👍", "🐇"]} level={rate} />
       </div>
 
-      {/* AI text area */}
+      {/* AI text area — high contrast white bg + dark text */}
       <div className={cn(
-        "mx-3 mt-2 mb-3 rounded-xl p-3 text-xs leading-relaxed flex-1 min-h-[120px] max-h-48 overflow-y-auto whitespace-pre-wrap transition-colors duration-300",
-        aiState === "drift_warning" ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" :
-        aiState === "generating" ? "bg-brand-500/10 border border-brand-500/20 text-brand-300 animate-pulse" :
-        aiState === "script_ready" ? "bg-green-500/10 border border-green-500/20 text-green-200" :
-        "bg-white/5 border border-white/10 text-slate-300"
+        "mx-3 mt-2 mb-3 rounded-xl p-3 text-sm leading-relaxed flex-1 overflow-y-auto whitespace-pre-wrap transition-colors duration-300",
+        aiState === "drift_warning"
+          ? "bg-amber-50 border border-amber-300 text-amber-900"
+          : aiState === "generating"
+          ? "bg-blue-50 border border-blue-200 text-blue-900 animate-pulse"
+          : aiState === "script_ready"
+          ? "bg-green-50 border border-green-300 text-green-900"
+          : "bg-slate-50 border border-slate-200 text-slate-800"
       )}>
         {aiText}
       </div>
 
       {/* Drift action buttons */}
       {aiState === "drift_warning" && (
-        <div className="flex gap-2 px-3 pb-3">
+        <div className="flex gap-2 px-3 pb-3 flex-shrink-0">
           <button
             onClick={dismissDrift}
-            className="flex-1 text-xs py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-colors"
+            className="flex-1 text-xs py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors"
           >
             I'm on track
           </button>
@@ -231,7 +271,7 @@ export function AIAssistantPanel({ isRecording, elapsed }: Props) {
                 setAIText(MOCK_GENERATED_SCRIPT);
               }, 2000);
             }}
-            className="flex-1 text-xs py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white transition-colors"
+            className="flex-1 text-xs py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-medium transition-colors"
           >
             Generate script
           </button>
