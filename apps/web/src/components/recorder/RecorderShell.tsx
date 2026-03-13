@@ -69,14 +69,9 @@ export function RecorderShell() {
     });
 
   const handleStart = useCallback(async () => {
-    const res = await fetch("/api/recordings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Untitled recording", region }),
-    });
-    const { data } = await res.json();
-    setRecordingId(data.id);
-
+    // Request media FIRST — getDisplayMedia requires an active user gesture.
+    // Any await before this call (e.g. fetch) consumes the transient activation
+    // and causes NotAllowedError in Chromium.
     const display = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 60 },
       audio: false,
@@ -85,9 +80,17 @@ export function RecorderShell() {
       audio: { echoCancellation: true, noiseSuppression: true },
     });
 
+    // Create recording entry after media is secured
+    const res = await fetch("/api/recordings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Untitled recording", region }),
+    });
+    const { data } = await res.json();
+    setRecordingId(data.id);
+
     setDisplayStream(display);
     setAudioStream(audio);
-    // Auto-show teleprompter if there's a script
     if (teleprompterContent.trim()) setShowTeleprompter(true);
     await start(display, audio);
   }, [region, start, teleprompterContent]);
