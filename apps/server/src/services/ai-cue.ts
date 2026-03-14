@@ -24,9 +24,10 @@ export class AiCueService {
     this.storage = new StorageService();
   }
 
-  async processChunk(recordingId: string, index: number, s3Key: string) {
+  // directBuffer: pass the raw audio bytes to skip the GCS round-trip in local dev.
+  async processChunk(recordingId: string, index: number, s3Key: string, directBuffer?: Buffer) {
     try {
-      const audioBuffer = await this.storage.downloadChunk(s3Key);
+      const audioBuffer = directBuffer ?? await this.storage.downloadChunk(s3Key);
       const analysis = await this.gemini.analyzeSpeechChunk(audioBuffer);
 
       const room = `recording:${recordingId}`;

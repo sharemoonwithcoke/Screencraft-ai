@@ -312,7 +312,7 @@ export function RecorderShell() {
         )}
       </div>
 
-      <AIAssistantPanel isRecording={state === "recording"} elapsed={elapsed} />
+      <AIAssistantPanel isRecording={state === "recording"} elapsed={elapsed} wsOn={wsOn} />
 
       <AICueOverlay wsOn={wsOn} />
 

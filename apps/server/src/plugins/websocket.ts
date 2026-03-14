@@ -39,25 +39,26 @@ export function registerSocketHandlers(io: Server) {
       index: number;
       recordingId: string;
     }) => {
-      try {
-        // 1. Persist chunk to S3
-        const s3Key = await storage.uploadChunk(
-          payload.recordingId,
-          payload.index,
-          Buffer.from(payload.blob)
-        );
+      const audioBuffer = Buffer.from(payload.blob);
 
-        // 2. Insert chunk record
+      // 1 & 2. Persist to GCS + DB — non-fatal so local dev without GCS/DB still works
+      let s3Key = `recordings/${payload.recordingId}/chunks/${String(payload.index).padStart(6, "0")}.webm`;
+      try {
+        s3Key = await storage.uploadChunk(payload.recordingId, payload.index, audioBuffer);
         await db.insert(recordingChunks).values({
           id: randomUUID(),
           recordingId: payload.recordingId,
           index: payload.index,
           s3Key,
-          duration: 5, // default chunk interval
+          duration: 5,
         });
+      } catch {
+        // Storage / DB unavailable in local dev — proceed to AI analysis anyway
+      }
 
-        // 3. Forward to AI cue service for real-time analysis
-        await aiCue.processChunk(payload.recordingId, payload.index, s3Key);
+      // 3. AI cue analysis — pass buffer directly to skip GCS download
+      try {
+        await aiCue.processChunk(payload.recordingId, payload.index, s3Key, audioBuffer);
       } catch (err) {
         socket.emit("recorder:error", { message: (err as Error).message });
       }

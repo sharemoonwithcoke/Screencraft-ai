@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Sparkles, X, GripVertical } from "lucide-react";
 import { cn } from "@/lib/cn";
+import type { ServerToClientEvent } from "@screencraft/shared";
 
 // ── VU-meter bars (animated frequency visualizer) ─────────────────────────────
 function VUBars({ level, colorClass }: { level: number; colorClass: string }) {
@@ -12,10 +13,9 @@ function VUBars({ level, colorClass }: { level: number; colorClass: string }) {
     const interval = setInterval(() => {
       setHeights((prev) =>
         prev.map((_, i) => {
-          const base = level;
           const variance = (Math.random() - 0.5) * 0.3;
           const stagger = Math.sin(Date.now() / 300 + i) * 0.15;
-          return Math.max(0.1, Math.min(1, base + variance + stagger));
+          return Math.max(0.1, Math.min(1, level + variance + stagger));
         })
       );
     }, 80);
@@ -67,104 +67,97 @@ function Indicator({ label, emojis, level }: IndicatorProps) {
   );
 }
 
-// ── AI state machine types ────────────────────────────────────────────────────
-type AIState = "recording" | "drift_warning" | "generating" | "script_ready";
+// ── wsOn prop type (matches useWebSocket return) ──────────────────────────────
+type WsOn = <E extends ServerToClientEvent["event"]>(
+  event: E,
+  handler: (event: Extract<ServerToClientEvent, { event: E }>) => void
+) => () => void;
 
-const COACHING_MSGS = [
-  "You're on track — keep going!",
-  "Good pacing. Remember to pause after key points.",
-  "Strong energy. Try making eye contact with the camera.",
-  "You're covering the content well. Stay focused.",
-];
-
-const MOCK_GENERATED_SCRIPT = `Based on what you've said so far, here's a suggested continuation:
-
-"To summarise, the key points we've covered are:
-1. The core value proposition for our users
-2. How our approach differs from competitors
-3. The roadmap for the next quarter
-
-Let me now walk you through a quick demo..."`;
+// ── AI state ──────────────────────────────────────────────────────────────────
+type AIState = "idle" | "coaching" | "alert";
 
 // ── Main component ─────────────────────────────────────────────────────────────
 interface Props {
   isRecording: boolean;
-  elapsed: string; // "MM:SS" from useRecorder
+  elapsed: string;
+  wsOn: WsOn;
 }
 
-export function AIAssistantPanel({ isRecording, elapsed }: Props) {
+export function AIAssistantPanel({ isRecording, elapsed: _elapsed, wsOn }: Props) {
   const [open, setOpen] = useState(true);
-  const [width, setWidth] = useState(288); // px, default 72 * 4
-  const [height, setHeight] = useState(360); // px
+  const [width, setWidth] = useState(288);
+  const [height, setHeight] = useState(360);
   const panelRef = useRef<HTMLDivElement>(null);
   const resizing = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
-  const [aiState, setAIState] = useState<AIState>("recording");
-  const [aiText, setAIText] = useState(COACHING_MSGS[0]);
+
+  const [aiState, setAIState] = useState<AIState>("idle");
+  const [aiText, setAIText] = useState("Start recording to get AI coaching.");
   const [confidence, setConfidence] = useState(0.75);
-  const [rate, setRate] = useState(0.70);
-  const [driftWarningAt, setDriftWarningAt] = useState<number | null>(null);
-  const coachingIdx = useRef(0);
-  const elapsedSecsRef = useRef(0);
+  const [rate, setRate] = useState(0.7);
 
-  // Parse elapsed "MM:SS" → seconds
+  // Reset when recording starts/stops
   useEffect(() => {
-    const parts = elapsed.split(":").map(Number);
-    elapsedSecsRef.current = parts.length === 2
-      ? parts[0] * 60 + parts[1]
-      : parts[0] * 3600 + parts[1] * 60 + parts[2];
-  }, [elapsed]);
-
-  // Simulate confidence + rate drift over time
-  useEffect(() => {
-    if (!isRecording) return;
-    const interval = setInterval(() => {
-      setConfidence((c) => Math.max(0.3, Math.min(1, c + (Math.random() - 0.52) * 0.08)));
-      setRate((r) => Math.max(0.25, Math.min(1, r + (Math.random() - 0.5) * 0.06)));
-    }, 2500);
-    return () => clearInterval(interval);
+    if (isRecording) {
+      setAIState("idle");
+      setAIText("Listening to your audio…");
+      setConfidence(0.75);
+      setRate(0.7);
+    } else {
+      setAIState("idle");
+      setAIText("Start recording to get AI coaching.");
+    }
   }, [isRecording]);
 
-  // AI state machine: coaching messages → drift warning → script gen
+  // ── Subscribe to real WebSocket AI events ────────────────────────────────
   useEffect(() => {
     if (!isRecording) return;
-    const interval = setInterval(() => {
-      const secs = elapsedSecsRef.current;
 
-      if (aiState === "recording") {
-        // Rotate coaching messages every 20s
-        if (secs > 0 && secs % 20 < 2) {
-          coachingIdx.current = (coachingIdx.current + 1) % COACHING_MSGS.length;
-          setAIText(COACHING_MSGS[coachingIdx.current]);
-        }
-        // Trigger drift warning after 40s
-        if (secs >= 40 && !driftWarningAt) {
-          setAIState("drift_warning");
-          setDriftWarningAt(secs);
-          setAIText(
-            "⚠️ Topic drift detected — you appear to be straying from your script.\n\nRefocus on the main topic, or I'll generate a continuation in 20 seconds."
-          );
-        }
-      }
+    const offs = [
+      wsOn("ai:speech:rate", ({ payload }) => {
+        const { wpm, level } = payload;
+        // Normalize wpm 60–180 → 0.1–1.0; midpoint 120 wpm ≈ 0.7
+        const normalized = Math.min(1, Math.max(0.1, (wpm - 60) / 120));
+        setRate(normalized);
 
-      if (aiState === "drift_warning" && driftWarningAt !== null) {
-        if (secs - driftWarningAt >= 20) {
-          setAIState("generating");
-          setAIText("Generating script from your current content…");
-          setTimeout(() => {
-            setAIState("script_ready");
-            setAIText(MOCK_GENERATED_SCRIPT);
-          }, 2500);
+        if (level === "fast") {
+          setAIState("alert");
+          setAIText(`Speaking too fast (${wpm} wpm) — slow down and let each point land.`);
+        } else if (level === "slow") {
+          setAIState("alert");
+          setAIText(`Speaking too slowly (${wpm} wpm) — pick up the pace to keep viewers engaged.`);
+        } else {
+          setAIState("coaching");
+          setAIText(`Good pace — ${wpm} wpm. Keep going.`);
+          // Slightly boost confidence when pace is good
+          setConfidence((c) => Math.min(1, c + 0.05));
         }
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isRecording, aiState, driftWarningAt]);
+      }),
 
-  const dismissDrift = useCallback(() => {
-    setAIState("recording");
-    setDriftWarningAt(null);
-    setAIText(COACHING_MSGS[coachingIdx.current]);
-  }, []);
+      wsOn("ai:filler:detected", ({ payload }) => {
+        // Reduce confidence per filler occurrence
+        setConfidence((c) => Math.max(0.1, c - 0.08));
+        setAIState("alert");
+        setAIText(
+          `Filler word "${payload.word}" detected (${payload.count}× so far). ` +
+          `Try pausing silently instead.`
+        );
+      }),
+
+      wsOn("ai:pause:detected", ({ payload }) => {
+        const secs = Math.round(payload.durationMs / 1000);
+        setAIState("alert");
+        setAIText(`Long pause (${secs}s) — continue with the next point or summarise what you just covered.`);
+      }),
+
+      wsOn("ai:monotone:detected", ({ payload }) => {
+        setConfidence((c) => Math.max(0.1, c - 0.1));
+        setAIState("coaching");
+        setAIText(payload.suggestion);
+      }),
+    ];
+
+    return () => offs.forEach((off) => off());
+  }, [isRecording, wsOn]);
 
   // ── Resize drag handling ──────────────────────────────────────────────────
   const onResizeStart = useCallback((e: React.MouseEvent) => {
@@ -172,8 +165,8 @@ export function AIAssistantPanel({ isRecording, elapsed }: Props) {
     resizing.current = { startX: e.clientX, startY: e.clientY, startW: width, startH: height };
     const onMove = (ev: MouseEvent) => {
       if (!resizing.current) return;
-      const dw = resizing.current.startX - ev.clientX; // drag left → wider
-      const dh = resizing.current.startY - ev.clientY; // drag up → taller
+      const dw = resizing.current.startX - ev.clientX;
+      const dh = resizing.current.startY - ev.clientY;
       setWidth(Math.max(220, Math.min(520, resizing.current.startW + dw)));
       setHeight(Math.max(260, Math.min(700, resizing.current.startH + dh)));
     };
@@ -193,7 +186,7 @@ export function AIAssistantPanel({ isRecording, elapsed }: Props) {
         onClick={() => setOpen(true)}
         className={cn(
           "fixed right-4 bottom-24 z-40 w-11 h-11 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-200",
-          aiState === "drift_warning" || aiState === "generating"
+          aiState === "alert"
             ? "bg-amber-500 animate-pulse"
             : "bg-brand-500 hover:bg-brand-600"
         )}
@@ -210,7 +203,7 @@ export function AIAssistantPanel({ isRecording, elapsed }: Props) {
       style={{ width, height, minWidth: 220, minHeight: 260 }}
       className="fixed right-4 bottom-24 z-40 bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-black/20 overflow-hidden flex flex-col select-none"
     >
-      {/* Resize grip — top-left corner, drag to resize */}
+      {/* Resize grip — top-left corner */}
       <div
         onMouseDown={onResizeStart}
         className="absolute top-0 left-0 w-6 h-6 flex items-center justify-center cursor-nw-resize z-10 text-slate-300 hover:text-slate-500 transition-colors"
@@ -224,11 +217,16 @@ export function AIAssistantPanel({ isRecording, elapsed }: Props) {
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-brand-500" />
           <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">AI Assistant</span>
-          {(aiState === "drift_warning" || aiState === "generating") && (
-            <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">Alert</span>
+          {aiState === "alert" && (
+            <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">
+              Alert
+            </span>
           )}
         </div>
-        <button onClick={() => setOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+        <button
+          onClick={() => setOpen(false)}
+          className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+        >
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -239,44 +237,19 @@ export function AIAssistantPanel({ isRecording, elapsed }: Props) {
         <Indicator label="Speech rate" emojis={["🐢", "👍", "🐇"]} level={rate} />
       </div>
 
-      {/* AI text area — high contrast white bg + dark text */}
-      <div className={cn(
-        "mx-3 mt-2 mb-3 rounded-xl p-3 text-sm leading-relaxed flex-1 overflow-y-auto whitespace-pre-wrap transition-colors duration-300",
-        aiState === "drift_warning"
-          ? "bg-amber-50 border border-amber-300 text-amber-900"
-          : aiState === "generating"
-          ? "bg-blue-50 border border-blue-200 text-blue-900 animate-pulse"
-          : aiState === "script_ready"
-          ? "bg-green-50 border border-green-300 text-green-900"
-          : "bg-slate-50 border border-slate-200 text-slate-800"
-      )}>
+      {/* AI coaching text — high contrast */}
+      <div
+        className={cn(
+          "mx-3 mt-2 mb-3 rounded-xl p-3 text-sm leading-relaxed flex-1 overflow-y-auto whitespace-pre-wrap transition-colors duration-300",
+          aiState === "alert"
+            ? "bg-amber-50 border border-amber-300 text-amber-900"
+            : aiState === "coaching"
+            ? "bg-blue-50 border border-blue-200 text-blue-900"
+            : "bg-slate-50 border border-slate-200 text-slate-500 italic"
+        )}
+      >
         {aiText}
       </div>
-
-      {/* Drift action buttons */}
-      {aiState === "drift_warning" && (
-        <div className="flex gap-2 px-3 pb-3 flex-shrink-0">
-          <button
-            onClick={dismissDrift}
-            className="flex-1 text-xs py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors"
-          >
-            I'm on track
-          </button>
-          <button
-            onClick={() => {
-              setAIState("generating");
-              setAIText("Generating script from your current content…");
-              setTimeout(() => {
-                setAIState("script_ready");
-                setAIText(MOCK_GENERATED_SCRIPT);
-              }, 2000);
-            }}
-            className="flex-1 text-xs py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-medium transition-colors"
-          >
-            Generate script
-          </button>
-        </div>
-      )}
     </div>
   );
 }
