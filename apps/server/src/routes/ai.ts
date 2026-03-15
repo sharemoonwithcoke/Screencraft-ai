@@ -32,6 +32,24 @@ export async function aiRoutes(fastify: FastifyInstance) {
   );
 
   /**
+   * POST /ai/optimize-script
+   * Accepts a raw teleprompter script and returns Gemini-optimized lines.
+   */
+  fastify.post<{ Body: { script: string } }>(
+    "/optimize-script",
+    async (req, reply) => {
+      const { script } = req.body;
+      if (!script?.trim()) {
+        reply.code(400);
+        return { ok: false, error: { code: "MISSING_SCRIPT" } };
+      }
+
+      const result = await gemini.optimizeScript(script);
+      return { ok: true, data: result };
+    }
+  );
+
+  /**
    * POST /ai/suggest
    * Fetch stored analysis issues and generate an edit plan via Prompt 4.
    */

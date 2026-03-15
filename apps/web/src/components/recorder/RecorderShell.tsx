@@ -24,19 +24,6 @@ const REGION_OPTIONS = [
   { value: "custom",     label: "Custom area", icon: Crop,      desc: "Draw a custom capture region" },
 ] as const;
 
-// Mock AI optimize: structures the script with better pacing markers
-function mockAiOptimize(text: string): string {
-  if (!text.trim()) return text;
-  const lines = text.split("\n").filter((l) => l.trim());
-  const result: string[] = [];
-  lines.forEach((line, i) => {
-    if (i > 0 && i % 3 === 0) result.push(""); // paragraph breaks for pacing
-    result.push(line.trim());
-  });
-  return result.join("\n");
-}
-
-
 export function RecorderShell() {
   const router = useRouter();
   const { status } = useSession();
@@ -123,13 +110,30 @@ export function RecorderShell() {
     reset();
   }, [reset]);
 
-  const handleAiOptimize = useCallback(() => {
+  const handleAiOptimize = useCallback(async () => {
+    if (!teleprompterContent.trim()) return;
     setOptimizing(true);
-    setTimeout(() => {
-      setTeleprompterContent((prev) => mockAiOptimize(prev));
+    try {
+      const res = await fetch("/api/ai/optimize-script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script: teleprompterContent }),
+      });
+      const json = await res.json();
+      if (json.ok && json.data?.script_lines?.length > 0) {
+        // Convert structured lines back to plain teleprompter text
+        setTeleprompterContent(
+          json.data.script_lines
+            .map((l: { text: string }) => l.text)
+            .join("\n")
+        );
+      }
+    } catch {
+      // API unavailable — leave script unchanged
+    } finally {
       setOptimizing(false);
-    }, 800);
-  }, []);
+    }
+  }, [teleprompterContent]);
 
   // ── Auth loading / redirect ─────────────────────────────────────────────
   if (status === "loading" || status === "unauthenticated") {
