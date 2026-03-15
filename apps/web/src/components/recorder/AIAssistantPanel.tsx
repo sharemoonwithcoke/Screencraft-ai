@@ -73,6 +73,15 @@ type WsOn = <E extends ServerToClientEvent["event"]>(
   handler: (event: Extract<ServerToClientEvent, { event: E }>) => void
 ) => () => void;
 
+// ── Coaching result from direct Gemini API (no server needed) ─────────────────
+export interface CoachingResult {
+  wpm: number;
+  fillerWords: string[];
+  pauseDetected: boolean;
+  monotone: boolean;
+  transcript: string;
+}
+
 // ── AI state ──────────────────────────────────────────────────────────────────
 type AIState = "idle" | "coaching" | "alert";
 
@@ -81,9 +90,10 @@ interface Props {
   isRecording: boolean;
   elapsed: string;
   wsOn: WsOn;
+  liveCoaching?: CoachingResult | null;
 }
 
-export function AIAssistantPanel({ isRecording, elapsed: _elapsed, wsOn }: Props) {
+export function AIAssistantPanel({ isRecording, elapsed: _elapsed, wsOn, liveCoaching }: Props) {
   const [open, setOpen] = useState(true);
   const [width, setWidth] = useState(288);
   const [height, setHeight] = useState(360);
@@ -158,6 +168,43 @@ export function AIAssistantPanel({ isRecording, elapsed: _elapsed, wsOn }: Props
 
     return () => offs.forEach((off) => off());
   }, [isRecording, wsOn]);
+
+  // ── Process direct Gemini coaching (works without server) ────────────────
+  useEffect(() => {
+    if (!liveCoaching || !isRecording) return;
+    const { wpm, fillerWords, pauseDetected, monotone } = liveCoaching;
+
+    // Priority: fillers > pace > pause > monotone
+    if (fillerWords.length > 0) {
+      setConfidence((c) => Math.max(0.1, c - 0.06 * fillerWords.length));
+      setAIState("alert");
+      setAIText(
+        `Filler words detected: ${fillerWords.map((w) => `"${w}"`).join(", ")}. ` +
+        `Try pausing silently instead.`
+      );
+    } else if (wpm > 0) {
+      const normalized = Math.min(1, Math.max(0.1, (wpm - 60) / 120));
+      setRate(normalized);
+      if (wpm > 160) {
+        setAIState("alert");
+        setAIText(`Speaking too fast (${wpm} wpm) — slow down and let each point land.`);
+      } else if (wpm < 90) {
+        setAIState("alert");
+        setAIText(`Speaking too slowly (${wpm} wpm) — pick up the pace to keep viewers engaged.`);
+      } else {
+        setAIState("coaching");
+        setAIText(`Good pace — ${wpm} wpm. Keep going.`);
+        setConfidence((c) => Math.min(1, c + 0.03));
+      }
+    } else if (pauseDetected) {
+      setAIState("alert");
+      setAIText("Long pause detected — continue with the next point.");
+    } else if (monotone) {
+      setConfidence((c) => Math.max(0.1, c - 0.08));
+      setAIState("coaching");
+      setAIText("Your tone sounds flat — try varying your pitch and emphasis on key words.");
+    }
+  }, [liveCoaching, isRecording]);
 
   // ── Resize drag handling ──────────────────────────────────────────────────
   const onResizeStart = useCallback((e: React.MouseEvent) => {

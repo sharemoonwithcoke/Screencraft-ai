@@ -18,6 +18,23 @@ import { useRecorder } from "@/hooks/useRecorder";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { cn } from "@/lib/cn";
 
+type CoachingResult = {
+  wpm: number;
+  fillerWords: string[];
+  pauseDetected: boolean;
+  monotone: boolean;
+  transcript: string;
+};
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 const REGION_OPTIONS = [
   { value: "fullscreen", label: "Full screen", icon: Monitor, desc: "Capture your entire display" },
   { value: "window",     label: "Window",      icon: AppWindow, desc: "Select a specific app window" },
@@ -42,8 +59,26 @@ export function RecorderShell() {
   const [region, setRegion] = useState<"fullscreen" | "window" | "custom">("fullscreen");
   const [showScriptEditor, setShowScriptEditor] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
+  const [liveCoaching, setLiveCoaching] = useState<CoachingResult | null>(null);
+  const coachRecorderRef = useRef<MediaRecorder | null>(null);
 
   const { on: wsOn, sendChunk } = useWebSocket(recordingId);
+
+  const analyzeAudioChunk = useCallback(async (blob: Blob) => {
+    try {
+      const base64 = await blobToBase64(blob);
+      const res = await fetch("/api/ai/coach-chunk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audio: base64, mimeType: blob.type || "audio/webm" }),
+      });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.ok) setLiveCoaching(json.data as CoachingResult);
+    } catch {
+      // Coaching is non-critical — ignore errors silently
+    }
+  }, []);
 
   const { state, elapsed, error, start, pause, resume, stop, reset } =
     useRecorder({
@@ -85,10 +120,26 @@ export function RecorderShell() {
     setDisplayStream(display);
     setAudioStream(audio);
     if (teleprompterContent.trim()) setShowTeleprompter(true);
+
+    // Set up audio-only coaching recorder (smaller blobs than video+audio)
+    if (audio) {
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      const coachRec = new MediaRecorder(audio, { mimeType });
+      coachRecorderRef.current = coachRec;
+      coachRec.ondataavailable = (e) => {
+        if (e.data.size > 0) void analyzeAudioChunk(e.data);
+      };
+      coachRec.start(5000);
+    }
+
     await start(display, audio ?? undefined);
-  }, [region, start, teleprompterContent]);
+  }, [region, start, teleprompterContent, analyzeAudioChunk]);
 
   const handleStop = useCallback(async () => {
+    coachRecorderRef.current?.stop();
+    coachRecorderRef.current = null;
     // Stop all media tracks immediately so camera/mic indicator lights turn off
     displayStream?.getTracks().forEach((t) => t.stop());
     audioStream?.getTracks().forEach((t) => t.stop());
@@ -103,6 +154,9 @@ export function RecorderShell() {
   }, [stop, recordingId, displayStream, audioStream]);
 
   const handleReset = useCallback(() => {
+    coachRecorderRef.current?.stop();
+    coachRecorderRef.current = null;
+    setLiveCoaching(null);
     setDisplayStream(null);
     setAudioStream(null);
     setRecordingId(null);
@@ -316,7 +370,7 @@ export function RecorderShell() {
         )}
       </div>
 
-      <AIAssistantPanel isRecording={state === "recording"} elapsed={elapsed} wsOn={wsOn} />
+      <AIAssistantPanel isRecording={state === "recording"} elapsed={elapsed} wsOn={wsOn} liveCoaching={liveCoaching} />
 
       <AICueOverlay wsOn={wsOn} />
 
