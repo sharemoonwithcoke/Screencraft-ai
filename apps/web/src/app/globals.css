@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 224 71% 4%;
+  }
+
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 213 31% 91%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-white text-slate-900 antialiased;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400;
+  }
+}
+
+@layer utilities {
+  /* AI cue overlay — never interrupts recording region */
+  .ai-cue-overlay {
+    @apply fixed pointer-events-none z-50;
+  }
+
+  /* Waveform canvas baseline */
+  .waveform-canvas {
+    @apply block w-full;
+    image-rendering: pixelated;
+  }
+
+  /* Zoom canvas — takes full recording viewport */
+  .zoom-canvas {
+    @apply absolute inset-0 w-full h-full;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+}
